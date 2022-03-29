@@ -1,400 +1,602 @@
-#include <iostream>  
-#include <bitset>  
-#include <string>  
-using namespace std;   
-typedef bitset<8> byte;  
-typedef bitset<32> word;  
+#include <stdio.h>
+#include <iostream>
+#include <stdlib.h>
+#include <string.h>
+using namespace std;
 
-const int Nr = 10;  //AES-128 requires 10 rounds of encryption  
-const int Nk = 4;   //Nk Represents the number of word s that are input keys  
+/* Set _setmode()*/ 
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#else
+#endif
 
-#include "cryptopp/osrng.h"
-using CryptoPP::AutoSeededRandomPool;
-using CryptoPP::byte;
+/* Convert string*/ 
+#include <locale>
+using std::wstring_convert;
+#include <codecvt>
+using std::codecvt_utf8;
+//Function definition
+/* convert string to wstring */
+wstring string_to_wstring (const std::string& str)
+{
+    wstring_convert<codecvt_utf8<wchar_t> > towstring;
+    return towstring.from_bytes(str);
+}
 
-byte S_Box[16][16] = {  
-    {0x63, 0x7C, 0x77, 0x7B, 0xF2, 0x6B, 0x6F, 0xC5, 0x30, 0x01, 0x67, 0x2B, 0xFE, 0xD7, 0xAB, 0x76},  
-    {0xCA, 0x82, 0xC9, 0x7D, 0xFA, 0x59, 0x47, 0xF0, 0xAD, 0xD4, 0xA2, 0xAF, 0x9C, 0xA4, 0x72, 0xC0},  
-    {0xB7, 0xFD, 0x93, 0x26, 0x36, 0x3F, 0xF7, 0xCC, 0x34, 0xA5, 0xE5, 0xF1, 0x71, 0xD8, 0x31, 0x15},  
-    {0x04, 0xC7, 0x23, 0xC3, 0x18, 0x96, 0x05, 0x9A, 0x07, 0x12, 0x80, 0xE2, 0xEB, 0x27, 0xB2, 0x75},  
-    {0x09, 0x83, 0x2C, 0x1A, 0x1B, 0x6E, 0x5A, 0xA0, 0x52, 0x3B, 0xD6, 0xB3, 0x29, 0xE3, 0x2F, 0x84},  
-    {0x53, 0xD1, 0x00, 0xED, 0x20, 0xFC, 0xB1, 0x5B, 0x6A, 0xCB, 0xBE, 0x39, 0x4A, 0x4C, 0x58, 0xCF},  
-    {0xD0, 0xEF, 0xAA, 0xFB, 0x43, 0x4D, 0x33, 0x85, 0x45, 0xF9, 0x02, 0x7F, 0x50, 0x3C, 0x9F, 0xA8},  
-    {0x51, 0xA3, 0x40, 0x8F, 0x92, 0x9D, 0x38, 0xF5, 0xBC, 0xB6, 0xDA, 0x21, 0x10, 0xFF, 0xF3, 0xD2},  
-    {0xCD, 0x0C, 0x13, 0xEC, 0x5F, 0x97, 0x44, 0x17, 0xC4, 0xA7, 0x7E, 0x3D, 0x64, 0x5D, 0x19, 0x73},  
-    {0x60, 0x81, 0x4F, 0xDC, 0x22, 0x2A, 0x90, 0x88, 0x46, 0xEE, 0xB8, 0x14, 0xDE, 0x5E, 0x0B, 0xDB},  
-    {0xE0, 0x32, 0x3A, 0x0A, 0x49, 0x06, 0x24, 0x5C, 0xC2, 0xD3, 0xAC, 0x62, 0x91, 0x95, 0xE4, 0x79},  
-    {0xE7, 0xC8, 0x37, 0x6D, 0x8D, 0xD5, 0x4E, 0xA9, 0x6C, 0x56, 0xF4, 0xEA, 0x65, 0x7A, 0xAE, 0x08},  
-    {0xBA, 0x78, 0x25, 0x2E, 0x1C, 0xA6, 0xB4, 0xC6, 0xE8, 0xDD, 0x74, 0x1F, 0x4B, 0xBD, 0x8B, 0x8A},  
-    {0x70, 0x3E, 0xB5, 0x66, 0x48, 0x03, 0xF6, 0x0E, 0x61, 0x35, 0x57, 0xB9, 0x86, 0xC1, 0x1D, 0x9E},  
-    {0xE1, 0xF8, 0x98, 0x11, 0x69, 0xD9, 0x8E, 0x94, 0x9B, 0x1E, 0x87, 0xE9, 0xCE, 0x55, 0x28, 0xDF},  
-    {0x8C, 0xA1, 0x89, 0x0D, 0xBF, 0xE6, 0x42, 0x68, 0x41, 0x99, 0x2D, 0x0F, 0xB0, 0x54, 0xBB, 0x16}  
-};  
-  
-byte Inv_S_Box[16][16] = {  
-    {0x52, 0x09, 0x6A, 0xD5, 0x30, 0x36, 0xA5, 0x38, 0xBF, 0x40, 0xA3, 0x9E, 0x81, 0xF3, 0xD7, 0xFB},  
-    {0x7C, 0xE3, 0x39, 0x82, 0x9B, 0x2F, 0xFF, 0x87, 0x34, 0x8E, 0x43, 0x44, 0xC4, 0xDE, 0xE9, 0xCB},  
-    {0x54, 0x7B, 0x94, 0x32, 0xA6, 0xC2, 0x23, 0x3D, 0xEE, 0x4C, 0x95, 0x0B, 0x42, 0xFA, 0xC3, 0x4E},  
-    {0x08, 0x2E, 0xA1, 0x66, 0x28, 0xD9, 0x24, 0xB2, 0x76, 0x5B, 0xA2, 0x49, 0x6D, 0x8B, 0xD1, 0x25},  
-    {0x72, 0xF8, 0xF6, 0x64, 0x86, 0x68, 0x98, 0x16, 0xD4, 0xA4, 0x5C, 0xCC, 0x5D, 0x65, 0xB6, 0x92},  
-    {0x6C, 0x70, 0x48, 0x50, 0xFD, 0xED, 0xB9, 0xDA, 0x5E, 0x15, 0x46, 0x57, 0xA7, 0x8D, 0x9D, 0x84},  
-    {0x90, 0xD8, 0xAB, 0x00, 0x8C, 0xBC, 0xD3, 0x0A, 0xF7, 0xE4, 0x58, 0x05, 0xB8, 0xB3, 0x45, 0x06},  
-    {0xD0, 0x2C, 0x1E, 0x8F, 0xCA, 0x3F, 0x0F, 0x02, 0xC1, 0xAF, 0xBD, 0x03, 0x01, 0x13, 0x8A, 0x6B},  
-    {0x3A, 0x91, 0x11, 0x41, 0x4F, 0x67, 0xDC, 0xEA, 0x97, 0xF2, 0xCF, 0xCE, 0xF0, 0xB4, 0xE6, 0x73},  
-    {0x96, 0xAC, 0x74, 0x22, 0xE7, 0xAD, 0x35, 0x85, 0xE2, 0xF9, 0x37, 0xE8, 0x1C, 0x75, 0xDF, 0x6E},  
-    {0x47, 0xF1, 0x1A, 0x71, 0x1D, 0x29, 0xC5, 0x89, 0x6F, 0xB7, 0x62, 0x0E, 0xAA, 0x18, 0xBE, 0x1B},  
-    {0xFC, 0x56, 0x3E, 0x4B, 0xC6, 0xD2, 0x79, 0x20, 0x9A, 0xDB, 0xC0, 0xFE, 0x78, 0xCD, 0x5A, 0xF4},  
-    {0x1F, 0xDD, 0xA8, 0x33, 0x88, 0x07, 0xC7, 0x31, 0xB1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xEC, 0x5F},  
-    {0x60, 0x51, 0x7F, 0xA9, 0x19, 0xB5, 0x4A, 0x0D, 0x2D, 0xE5, 0x7A, 0x9F, 0x93, 0xC9, 0x9C, 0xEF},  
-    {0xA0, 0xE0, 0x3B, 0x4D, 0xAE, 0x2A, 0xF5, 0xB0, 0xC8, 0xEB, 0xBB, 0x3C, 0x83, 0x53, 0x99, 0x61},  
-    {0x17, 0x2B, 0x04, 0x7E, 0xBA, 0x77, 0xD6, 0x26, 0xE1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0C, 0x7D}  
-};  
-  
-//Round constant, used in key expansion. (AES-128 only takes 10 rounds)  
-word Rcon[10] = {0x01000000, 0x02000000, 0x04000000, 0x08000000, 0x10000000,   
-                 0x20000000, 0x40000000, 0x80000000, 0x1b000000, 0x36000000};  
-  
-/**********************************************************************/    
-/*                                                                    */    
-/*                              AES Algorithmic Implementation*/    
-/*                                                                    */    
-/**********************************************************************/   
-  
-/******************************Here is the encrypted transformation function ****************************************************/  
-/** 
- *  S Box Conversion - The first four bits are line numbers and the last four bits are column numbers 
- */  
-void SubBytes(byte mtx[4*4])  
-{  
-    for(int i=0; i<16; ++i)  
-    {  
-        int row = mtx[i][7]*8 + mtx[i][6]*4 + mtx[i][5]*2 + mtx[i][4];  
-        int col = mtx[i][3]*8 + mtx[i][2]*4 + mtx[i][1]*2 + mtx[i][0];  
-        mtx[i] = S_Box[row][col];  
-    }  
-}  
-  
-/** 
- *  Line Transform - Byte Cyclic Shift 
- */  
-void ShiftRows(byte mtx[4*4])  
-{  
-    //The second line circle moves one bit to the left  
-    byte temp = mtx[4];  
-    for(int i=0; i<3; ++i)  
-        mtx[i+4] = mtx[i+5];  
-    mtx[7] = temp;  
-    //The third line circle moves two places to the left  
-    for(int i=0; i<2; ++i)  
-    {  
-        temp = mtx[i+8];  
-        mtx[i+8] = mtx[i+10];  
-        mtx[i+10] = temp;  
-    }  
-    //The fourth line moves three left circles  
-    temp = mtx[15];  
-    for(int i=3; i>0; --i)  
-        mtx[i+12] = mtx[i+11];  
-    mtx[12] = temp;  
-}  
-  
-/** 
- *  Multiplication over Finite Fields GF(2^8) 
- */  
-byte GFMul(byte a, byte b) {   
-    byte p = 0;  
-    byte hi_bit_set;  
-    for (int counter = 0; counter < 8; counter++) {  
-        if ((b & byte(1)) != 0) {  
-            p ^= a;  
-        }  
-        hi_bit_set = (byte) (a & byte(0x80));  
-        a <<= 1;  
-        if (hi_bit_set != 0) {  
-            a ^= 0x1b; /* x^8 + x^4 + x^3 + x + 1 */  
-        }  
-        b >>= 1;  
-    }  
-    return p;  
-}  
-  
-/** 
- *  Column transformation 
- */  
-void MixColumns(byte mtx[4*4])  
-{  
-    byte arr[4];  
-    for(int i=0; i<4; ++i)  
-    {  
-        for(int j=0; j<4; ++j)  
-            arr[j] = mtx[i+j*4];  
-  
-        mtx[i] = GFMul(0x02, arr[0]) ^ GFMul(0x03, arr[1]) ^ arr[2] ^ arr[3];  
-        mtx[i+4] = arr[0] ^ GFMul(0x02, arr[1]) ^ GFMul(0x03, arr[2]) ^ arr[3];  
-        mtx[i+8] = arr[0] ^ arr[1] ^ GFMul(0x02, arr[2]) ^ GFMul(0x03, arr[3]);  
-        mtx[i+12] = GFMul(0x03, arr[0]) ^ arr[1] ^ arr[2] ^ GFMul(0x02, arr[3]);  
-    }  
-}  
-  
-/** 
- *  Round Key Plus Transform - XOR each column with the extended key 
- */  
-void AddRoundKey(byte mtx[4*4], word k[4])  
-{  
-    for(int i=0; i<4; ++i)  
-    {  
-        word k1 = k[i] >> 24;  
-        word k2 = (k[i] << 8) >> 24;  
-        word k3 = (k[i] << 16) >> 24;  
-        word k4 = (k[i] << 24) >> 24;  
+/* convert wstring to string */
+string wstring_to_string (const std::wstring& str)
+{
+    wstring_convert<codecvt_utf8<wchar_t> > tostring;
+    return tostring.to_bytes(str);
+}
+
+// The number of columns comprising a state in AES.
+#define Nb 4
+
+// The number of rounds in AES Cipher.
+int Nr = 0;
+
+// The number of 32 bit words in the key.
+int Nk = 8;
+
+// in - the array that holds the plain text to be encrypted.
+// out - the array that holds the cipher text.
+// state - the array that holds the intermediate results during encryption.
+// re - the array that holds the decoded cipher from hex.
+unsigned char in[1024], out[1024], state[4][Nb], re[1024];
+
+// The array that stores the round keys.
+unsigned char RoundKey[240];
+
+// The Key input to the AES Program
+unsigned char Key[32];
+
+// The iv input to the AES Program
+unsigned char iv[16];
+
+int getSBoxValue(int num) {
+   int sbox[256] = {
+      0x63, 0x7c, 0x77, 0x7b, 0xf2, 0x6b, 0x6f, 0xc5, 
+      0x30, 0x01, 0x67, 0x2b, 0xfe, 0xd7, 0xab, 0x76, 
+      0xca, 0x82, 0xc9, 0x7d, 0xfa, 0x59, 0x47, 0xf0, 
+      0xad, 0xd4, 0xa2, 0xaf, 0x9c, 0xa4, 0x72, 0xc0, 
+      0xb7, 0xfd, 0x93, 0x26, 0x36, 0x3f, 0xf7, 0xcc, 
+      0x34, 0xa5, 0xe5, 0xf1, 0x71, 0xd8, 0x31, 0x15, 
+      0x04, 0xc7, 0x23, 0xc3, 0x18, 0x96, 0x05, 0x9a, 
+      0x07, 0x12, 0x80, 0xe2, 0xeb, 0x27, 0xb2, 0x75,
+      0x09, 0x83, 0x2c, 0x1a, 0x1b, 0x6e, 0x5a, 0xa0, 
+      0x52, 0x3b, 0xd6, 0xb3, 0x29, 0xe3, 0x2f, 0x84, 
+      0x53, 0xd1, 0x00, 0xed, 0x20, 0xfc, 0xb1, 0x5b, 
+      0x6a, 0xcb, 0xbe, 0x39, 0x4a, 0x4c, 0x58, 0xcf, 
+      0xd0, 0xef, 0xaa, 0xfb, 0x43, 0x4d, 0x33, 0x85, 
+      0x45, 0xf9, 0x02, 0x7f, 0x50, 0x3c, 0x9f, 0xa8, 
+      0x51, 0xa3, 0x40, 0x8f, 0x92, 0x9d, 0x38, 0xf5, 
+      0xbc, 0xb6, 0xda, 0x21, 0x10, 0xff, 0xf3, 0xd2, 
+      0xcd, 0x0c, 0x13, 0xec, 0x5f, 0x97, 0x44, 0x17, 
+      0xc4, 0xa7, 0x7e, 0x3d, 0x64, 0x5d, 0x19, 0x73, 
+      0x60, 0x81, 0x4f, 0xdc, 0x22, 0x2a, 0x90, 0x88, 
+      0x46, 0xee, 0xb8, 0x14, 0xde, 0x5e, 0x0b, 0xdb, 
+      0xe0, 0x32, 0x3a, 0x0a, 0x49, 0x06, 0x24, 0x5c, 
+      0xc2, 0xd3, 0xac, 0x62, 0x91, 0x95, 0xe4, 0x79, 
+      0xe7, 0xc8, 0x37, 0x6d, 0x8d, 0xd5, 0x4e, 0xa9, 
+      0x6c, 0x56, 0xf4, 0xea, 0x65, 0x7a, 0xae, 0x08, 
+      0xba, 0x78, 0x25, 0x2e, 0x1c, 0xa6, 0xb4, 0xc6, 
+      0xe8, 0xdd, 0x74, 0x1f, 0x4b, 0xbd, 0x8b, 0x8a, 
+      0x70, 0x3e, 0xb5, 0x66, 0x48, 0x03, 0xf6, 0x0e, 
+      0x61, 0x35, 0x57, 0xb9, 0x86, 0xc1, 0x1d, 0x9e, 
+      0xe1, 0xf8, 0x98, 0x11, 0x69, 0xd9, 0x8e, 0x94, 
+      0x9b, 0x1e, 0x87, 0xe9, 0xce, 0x55, 0x28, 0xdf, 
+      0x8c, 0xa1, 0x89, 0x0d, 0xbf, 0xe6, 0x42, 0x68, 
+      0x41, 0x99, 0x2d, 0x0f, 0xb0, 0x54, 0xbb, 0x16 }; 
+   return sbox[num];
+}
+
+int getSBoxInvert(int num) {
+   int rsbox[256] = { 
+      0x52, 0x09, 0x6a, 0xd5, 0x30, 0x36, 0xa5, 0x38, 
+      0xbf, 0x40, 0xa3, 0x9e, 0x81, 0xf3, 0xd7, 0xfb,
+      0x7c, 0xe3, 0x39, 0x82, 0x9b, 0x2f, 0xff, 0x87, 
+      0x34, 0x8e, 0x43, 0x44, 0xc4, 0xde, 0xe9, 0xcb,
+      0x54, 0x7b, 0x94, 0x32, 0xa6, 0xc2, 0x23, 0x3d, 
+      0xee, 0x4c, 0x95, 0x0b, 0x42, 0xfa, 0xc3, 0x4e,
+      0x08, 0x2e, 0xa1, 0x66, 0x28, 0xd9, 0x24, 0xb2, 
+      0x76, 0x5b, 0xa2, 0x49, 0x6d, 0x8b, 0xd1, 0x25,
+      0x72, 0xf8, 0xf6, 0x64, 0x86, 0x68, 0x98, 0x16, 
+      0xd4, 0xa4, 0x5c, 0xcc, 0x5d, 0x65, 0xb6, 0x92,
+      0x6c, 0x70, 0x48, 0x50, 0xfd, 0xed, 0xb9, 0xda, 
+      0x5e, 0x15, 0x46, 0x57, 0xa7, 0x8d, 0x9d, 0x84,
+      0x90, 0xd8, 0xab, 0x00, 0x8c, 0xbc, 0xd3, 0x0a, 
+      0xf7, 0xe4, 0x58, 0x05, 0xb8, 0xb3, 0x45, 0x06,
+      0xd0, 0x2c, 0x1e, 0x8f, 0xca, 0x3f, 0x0f, 0x02, 
+      0xc1, 0xaf, 0xbd, 0x03, 0x01, 0x13, 0x8a, 0x6b,
+      0x3a, 0x91, 0x11, 0x41, 0x4f, 0x67, 0xdc, 0xea, 
+      0x97, 0xf2, 0xcf, 0xce, 0xf0, 0xb4, 0xe6, 0x73,
+      0x96, 0xac, 0x74, 0x22, 0xe7, 0xad, 0x35, 0x85, 
+      0xe2, 0xf9, 0x37, 0xe8, 0x1c, 0x75, 0xdf, 0x6e,
+      0x47, 0xf1, 0x1a, 0x71, 0x1d, 0x29, 0xc5, 0x89, 
+      0x6f, 0xb7, 0x62, 0x0e, 0xaa, 0x18, 0xbe, 0x1b,
+      0xfc, 0x56, 0x3e, 0x4b, 0xc6, 0xd2, 0x79, 0x20, 
+      0x9a, 0xdb, 0xc0, 0xfe, 0x78, 0xcd, 0x5a, 0xf4,
+      0x1f, 0xdd, 0xa8, 0x33, 0x88, 0x07, 0xc7, 0x31, 
+      0xb1, 0x12, 0x10, 0x59, 0x27, 0x80, 0xec, 0x5f,
+      0x60, 0x51, 0x7f, 0xa9, 0x19, 0xb5, 0x4a, 0x0d, 
+      0x2d, 0xe5, 0x7a, 0x9f, 0x93, 0xc9, 0x9c, 0xef,
+      0xa0, 0xe0, 0x3b, 0x4d, 0xae, 0x2a, 0xf5, 0xb0, 
+      0xc8, 0xeb, 0xbb, 0x3c, 0x83, 0x53, 0x99, 0x61,
+      0x17, 0x2b, 0x04, 0x7e, 0xba, 0x77, 0xd6, 0x26, 
+      0xe1, 0x69, 0x14, 0x63, 0x55, 0x21, 0x0c, 0x7d };
+   return rsbox[num];
+}
+
+
+
+int Rcon[255] = {
+         0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 
+   0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 
+   0x9a, 0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 
+   0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 
+   0x39, 0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 
+   0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 
+   0x3a, 0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, 
+   0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 
+   0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, 
+   0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 
+   0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, 
+   0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 
+   0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d, 
+   0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 
+   0x1b, 0x36, 0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 
+   0x5e, 0xbc, 0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 
+   0xb3, 0x7d, 0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 
+   0xe4, 0xd3, 0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 
+   0x94, 0x33, 0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 
+   0xe8, 0xcb, 0x8d, 0x01, 0x02, 0x04, 0x08, 0x10, 
+   0x20, 0x40, 0x80, 0x1b, 0x36, 0x6c, 0xd8, 0xab, 
+   0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 0x63, 0xc6, 0x97, 
+   0x35, 0x6a, 0xd4, 0xb3, 0x7d, 0xfa, 0xef, 0xc5, 
+   0x91, 0x39, 0x72, 0xe4, 0xd3, 0xbd, 0x61, 0xc2, 
+   0x9f, 0x25, 0x4a, 0x94, 0x33, 0x66, 0xcc, 0x83, 
+   0x1d, 0x3a, 0x74, 0xe8, 0xcb, 0x8d, 0x01, 0x02, 
+   0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36, 
+   0x6c, 0xd8, 0xab, 0x4d, 0x9a, 0x2f, 0x5e, 0xbc, 
+   0x63, 0xc6, 0x97, 0x35, 0x6a, 0xd4, 0xb3, 0x7d, 
+   0xfa, 0xef, 0xc5, 0x91, 0x39, 0x72, 0xe4, 0xd3, 
+   0xbd, 0x61, 0xc2, 0x9f, 0x25, 0x4a, 0x94, 0x33, 
+   0x66, 0xcc, 0x83, 0x1d, 0x3a, 0x74, 0xe8, 0xcb  };
+
+void KeyExpansion() {
+   int i,j;
+   unsigned char temp[4],k;
+	
+   // The first round key is the key itself.
+   for (i=0 ; i < Nk ; i++) {
+      RoundKey[i*4] = Key[i*4];
+      RoundKey[i*4+1] = Key[i*4+1];
+      RoundKey[i*4+2] = Key[i*4+2];
+      RoundKey[i*4+3] = Key[i*4+3];
+   }
+
+   // All other round keys are found from the previous round keys.
+   while (i < (Nb * (Nr+1))) {
+      for (j=0 ; j < 4 ; j++) {
+	 temp[j] = RoundKey[(i-1) * 4 + j];
+      }
+      if (i % Nk == 0) {
+	 // This function rotates the 4 bytes in a word to the left once.
+	 
+	 // Function RotWord()
+	 k = temp[0];
+	 temp[0] = temp[1];
+	 temp[1] = temp[2];
+	 temp[2] = temp[3];
+	 temp[3] = k;
+	 
+	 // SubWord() is a function that takes a four-byte input word and 
+	 // applies the S-box to each of the four bytes to produce an output
+     // word.
+	 
+	 // Function Subword()
+	 temp[0] = getSBoxValue(temp[0]);
+	 temp[1] = getSBoxValue(temp[1]);
+	 temp[2] = getSBoxValue(temp[2]);
+	 temp[3] = getSBoxValue(temp[3]);
+
+	 temp[0] =  temp[0] ^ Rcon[i/Nk];
+      } else if (Nk > 6 && i % Nk == 4) {
+	 // Function Subword()
+	 temp[0] = getSBoxValue(temp[0]);
+	 temp[1] = getSBoxValue(temp[1]);
+	 temp[2] = getSBoxValue(temp[2]);
+	 temp[3] = getSBoxValue(temp[3]);
+      }
+    RoundKey[i*4+0] = RoundKey[(i-Nk)*4+0] ^ temp[0];
+    RoundKey[i*4+1] = RoundKey[(i-Nk)*4+1] ^ temp[1];
+    RoundKey[i*4+2] = RoundKey[(i-Nk)*4+2] ^ temp[2];
+    RoundKey[i*4+3] = RoundKey[(i-Nk)*4+3] ^ temp[3];
+    i++;
+   }
+}
+
+// This function adds the round key to state by an XOR function.
+void AddRoundKey(int round) {
+   int i,j;
+   for (i=0 ; i < Nb ; i++) {
+      for (j=0 ; j < 4 ; j++) {
+	 state[j][i] ^= RoundKey[round * Nb * 4 + i * Nb + j];
+      }
+   }
+}
+
+// The SubBytes Function Substitutes the values in the
+// state matrix with values in an S-box.
+void SubBytes() {
+   int i,j;
+   for (i=0 ; i < 4 ; i++) {
+      for (j=0 ; j < Nb ; j++) {
+	 state[i][j] = getSBoxValue(state[i][j]);
+      }
+   }
+}
+
+void InvSubBytes() {
+   int i,j;
+   for (i=0 ; i < 4 ; i++) {
+      for (j=0 ; j < Nb ; j++) {
+	 state[i][j] = getSBoxInvert(state[i][j]);
+      }
+   }
+}
+
+
+// The ShiftRows() function shifts the rows in the state to the left.
+void ShiftRows() {
+   unsigned char temp;
+
+   // Rotate first row 1 columns to left	
+   temp = state[1][0];
+   state[1][0] = state[1][1];
+   state[1][1] = state[1][2];
+   state[1][2] = state[1][3];
+   state[1][3] = temp;
+
+   // Rotate second row 2 columns to left	
+   temp = state[2][0];
+   state[2][0] = state[2][2];
+   state[2][2] = temp;
+
+   temp = state[2][1];
+   state[2][1] = state[2][3];
+   state[2][3] = temp;
+
+   // Rotate third row 3 columns to left
+   temp = state[3][0];
+   state[3][0] = state[3][3];
+   state[3][3] = state[3][2];
+   state[3][2] = state[3][1];
+   state[3][1] = temp;
+}
+
+void InvShiftRows() {
+   unsigned char temp;
+
+   // Rotate first row 1 columns to right	
+   temp = state[1][3];
+   state[1][3] = state[1][2];
+   state[1][2] = state[1][1];
+   state[1][1] = state[1][0];
+   state[1][0] = temp;
+
+   // Rotate second row 2 columns to right	
+   temp = state[2][0];
+   state[2][0] = state[2][2];
+   state[2][2] = temp;
+   
+   temp = state[2][1];
+   state[2][1] = state[2][3];
+   state[2][3] = temp;
+
+   // Rotate third row 3 columns to right
+   temp = state[3][0];
+   state[3][0] = state[3][1];
+   state[3][1] = state[3][2];
+   state[3][2] = state[3][3];
+   state[3][3] = temp;
+}
+
+#define xtime(x)   ((x<<1) ^ (((x>>7) & 1) * 0x1b))
+
+#define Multiply(x,y) (((y & 1) * x) ^ ((y>>1 & 1) * xtime(x)) ^ ((y>>2 & 1) * xtime(xtime(x))) ^ ((y>>3 & 1) * xtime(xtime(xtime(x)))) ^ ((y>>4 & 1) * xtime(xtime(xtime(xtime(x))))))
+
+// MixColumns function mixes the columns of the state matrix
+void MixColumns() {
+   int i;
+   unsigned char Tmp,Tm,t;
+   for (i=0 ; i < Nb ; i++) {	
+      t = state[0][i];
+      Tmp = state[0][i] ^ state[1][i] ^ state[2][i] ^ state[3][i] ;
+      Tm = state[0][i] ^ state[1][i] ; 
+      Tm = xtime(Tm); 
+      state[0][i] ^= Tm ^ Tmp ;
+      
+      Tm = state[1][i] ^ state[2][i] ; 
+      Tm = xtime(Tm); 
+      state[1][i] ^= Tm ^ Tmp ;
+
+      Tm = state[2][i] ^ state[3][i] ; 
+      Tm = xtime(Tm); 
+      state[2][i] ^= Tm ^ Tmp ;
+
+      Tm = state[3][i] ^ t ; 
+      Tm = xtime(Tm); 
+      state[3][i] ^= Tm ^ Tmp ;
+   }
+}
+
+void InvMixColumns() {
+   int i;
+   unsigned char a,b,c,d;
+   for (i=0 ; i < Nb ; i++) {	
+	
+      a = state[0][i];
+      b = state[1][i];
+      c = state[2][i];
+      d = state[3][i];
+		
+      state[0][i] = Multiply(a, 0x0e) ^ Multiply(b, 0x0b) ^ 
+	 Multiply(c, 0x0d) ^ Multiply(d, 0x09);
+      state[1][i] = Multiply(a, 0x09) ^ Multiply(b, 0x0e) ^ 
+	 Multiply(c, 0x0b) ^ Multiply(d, 0x0d);
+      state[2][i] = Multiply(a, 0x0d) ^ Multiply(b, 0x09) ^ 
+	 Multiply(c, 0x0e) ^ Multiply(d, 0x0b);
+      state[3][i] = Multiply(a, 0x0b) ^ Multiply(b, 0x0d) ^ 
+	 Multiply(c, 0x09) ^ Multiply(d, 0x0e);
+   }
+}
+
+int fillBlockEN (int sz, char *str, unsigned char *in) {
+   int j=0;
+   while (sz < strlen(str)) {
+      if (j >= Nb*4) break;
+      in[j++] = (unsigned char)str[sz];
+      sz++;
+   }
+   // Pad the block with 0s, if necessary
+   if (sz >= strlen(str)) for ( ; j < Nb*4 ; j++) in[j] = 0;
+   return sz;   
+}
+
+int fillBlockDE (int sz, unsigned char *in, int m) {
+   int j=0;
+   while (sz < m) {
+      if (j >= Nb*4) break;
+      in[j++] = re[sz];
+      sz++;
+   }
+   return sz;   
+}
+
+void Encrypt() {
+   int i,j,round=0;
+
+   //Copy the input PlainText to state array.
+   for (i=0 ; i < Nb ; i++) {
+      for (j=0 ; j < 4 ; j++) {
+	      state[j][i] = in[i*4 + j];
+      }
+   }
+
+   // Add the First round key to the state before starting the rounds.
+   AddRoundKey(0); 
+	
+   // There will be Nr rounds.
+   // These Nr-1 rounds are executed in the loop below.
+   for (round=1 ; round < Nr ; round++) {
+
+      SubBytes();
+      ShiftRows();
+      MixColumns();
+      AddRoundKey(round);
+   }
+	
+   // The last round is given below.
+   SubBytes();
+   ShiftRows();
+   AddRoundKey(Nr);
+   
+   // The encryption process is over.
+   // Copy the state array to output array.
+   for (i=0 ; i < Nb ; i++) {
+      for (j=0 ; j < 4 ; j++) {
+	 out[i*4+j]=state[j][i];
+      }
+   }
+
+}
+
+void Decrypt() {
+   int i,j,round=0;
+
+   //Copy the input CipherText to state array.
+   for (i=0 ; i < Nb ; i++) {
+      for (j=0 ; j < 4 ; j++) {
+	 state[j][i] = in[i*4 + j];
+      }
+   }
+
+   // Add the First round key to the state before starting the rounds.
+   AddRoundKey(Nr); 
+
+   // There will be Nr rounds.
+   // The first Nr-1 rounds are identical.
+   for (round=Nr-1 ; round > 0 ; round--) {
+      InvShiftRows();
+      InvSubBytes();
+      AddRoundKey(round);
+      InvMixColumns();
+   }
+	
+   // The last round is given below.
+   InvShiftRows();
+   InvSubBytes();
+   AddRoundKey(0);
+
+   // The decryption process is over.
+   // Copy the state array to output array.
+   for(i=0 ; i < Nb ; i++) {
+      for(j=0 ; j < 4 ; j++) {
+	 out[i*4+j] = state[j][i];
+      }
+   }
+}
+
+void XorarrayEN()
+{
+   for(int i=0;i<sizeof(in);i++)
+      in[i] ^= iv[i];
+}
+
+void XorarrayDE()
+{
+   for(int i=0;i<sizeof(out);i++)
+      out[i] ^= iv[i];  
+}
+
+
+int main() {
+
+   // setup mode hệ điều hành
+   #ifdef __linux__
+	setlocale(LC_ALL,"");
+	#elif _WIN32
+	_setmode(_fileno(stdin), _O_U16TEXT);
+ 	_setmode(_fileno(stdout), _O_U16TEXT);
+	#else
+	#endif
+
+   int i,n,m;
+   // Get action
+   wcout<<"1.Encrypt 2.Decrypt\n";
+   wcin>>n;
+   // Calculate Nr from Nk and, implicitly, from Nb
+   Nr = Nk + 6;
+
+   // The key values are placed here
+   wstring ws;
+   string s;
+   wcout<<"PLease key(hex): ";
+   wcin>>ws;
+   s = wstring_to_string(ws);
+   fflush(stdin);
+   // Convert hex to byte
+   int len = s.length();
+   std::string newString;
+   for(int i=0; i< len; i+=2)
+   {
+       std::string byte = s.substr(i,2);
+       char chr = (char) (int)strtol(byte.c_str(), NULL, 16);
+       newString.push_back(chr);
+   }
+   memcpy(Key, newString.data(), newString.length());
+
+   // The iv values are placed here
+   string ss;
+   wstring wss;
+   wcout<<"Please iv(hex): ";
+   wcin>>wss;
+   ss = wstring_to_string(wss);
+   fflush(stdin);
+   len = ss.length();
+   // Convert hex to byte
+   std::string newStringg;
+   for(int i=0; i< len; i+=2)
+   {
+       std::string byte = ss.substr(i,2);
+       char chr = (char) (int)strtol(byte.c_str(), NULL, 16);
+       newStringg.push_back(chr);
+   }
+   memcpy(iv, newStringg.data(), newStringg.length());
+   
+   // Get the input string
+   char str[1024];
+   wstring wi;
+   string si;
+   wcout<<"Please input: ";
+   getline(wcin,wi);
+   fflush(stdin);
+   si = wstring_to_string(wi);
+   strcpy(str, si.c_str());
+   //fgets(str, 1024, stdin);
+
+   // The KeyExpansion routine is called before encryption.
+   KeyExpansion();
+      
+   // sz is the cursor into the input string
+   int sz=0;
+
+   switch (n)
+   {
+   case 1:   // Encrypt
+   {
+   while (sz < strlen(str)) {
+      // Fill the array 'in' with the next plaintext block
+      sz = fillBlockEN (sz, str, in);
+
+      // Xor 
+      XorarrayEN();
+
+      // The block is encrypted here - the result is in the array 'out'
+      Encrypt();
+
+      for(int i=0;i<sizeof(iv);i++)
+         iv[i] = out[i];
           
-        mtx[i] = mtx[i] ^ byte(k1.to_ulong());  
-        mtx[i+4] = mtx[i+4] ^ byte(k2.to_ulong());  
-        mtx[i+8] = mtx[i+8] ^ byte(k3.to_ulong());  
-        mtx[i+12] = mtx[i+12] ^ byte(k4.to_ulong());  
-    }  
-}  
-  
-/**************************Here is the decrypted inverse transform function *******************************************************/  
-/** 
- *  Inverse S-box transformation 
- */  
-void InvSubBytes(byte mtx[4*4])  
-{  
-    for(int i=0; i<16; ++i)  
-    {  
-        int row = mtx[i][7]*8 + mtx[i][6]*4 + mtx[i][5]*2 + mtx[i][4];  
-        int col = mtx[i][3]*8 + mtx[i][2]*4 + mtx[i][1]*2 + mtx[i][0];  
-        mtx[i] = Inv_S_Box[row][col];  
-    }  
-}  
-  
-/** 
- *  Reverse Transform - Cyclic Right Shift in Bytes 
- */  
-void InvShiftRows(byte mtx[4*4])  
-{  
-    //The second line circle moves one bit to the right  
-    byte temp = mtx[7];  
-    for(int i=3; i>0; --i)  
-        mtx[i+4] = mtx[i+3];  
-    mtx[4] = temp;  
-    //The third line circle moves two to the right  
-    for(int i=0; i<2; ++i)  
-    {  
-        temp = mtx[i+8];  
-        mtx[i+8] = mtx[i+10];  
-        mtx[i+10] = temp;  
-    }  
-    //Fourth line circle moves three to the right  
-    temp = mtx[12];  
-    for(int i=0; i<3; ++i)  
-        mtx[i+12] = mtx[i+13];  
-    mtx[15] = temp;  
-}  
-  
-void InvMixColumns(byte mtx[4*4])  
-{  
-    byte arr[4];  
-    for(int i=0; i<4; ++i)  
-    {  
-        for(int j=0; j<4; ++j)  
-            arr[j] = mtx[i+j*4];  
-  
-        mtx[i] = GFMul(0x0e, arr[0]) ^ GFMul(0x0b, arr[1]) ^ GFMul(0x0d, arr[2]) ^ GFMul(0x09, arr[3]);  
-        mtx[i+4] = GFMul(0x09, arr[0]) ^ GFMul(0x0e, arr[1]) ^ GFMul(0x0b, arr[2]) ^ GFMul(0x0d, arr[3]);  
-        mtx[i+8] = GFMul(0x0d, arr[0]) ^ GFMul(0x09, arr[1]) ^ GFMul(0x0e, arr[2]) ^ GFMul(0x0b, arr[3]);  
-        mtx[i+12] = GFMul(0x0b, arr[0]) ^ GFMul(0x0d, arr[1]) ^ GFMul(0x09, arr[2]) ^ GFMul(0x0e, arr[3]);  
-    }  
-}  
-  
-/******************************Following is the key extension section ***************************************************************/  
-/** 
- * Convert four byte s to one word. 
- */  
-word Word(byte& k1, byte& k2, byte& k3, byte& k4)  
-{  
-    word result(0x00000000);  
-    word temp;  
-    temp = k1.to_ulong();  // K1  
-    temp <<= 24;  
-    result |= temp;  
-    temp = k2.to_ulong();  // K2  
-    temp <<= 16;  
-    result |= temp;  
-    temp = k3.to_ulong();  // K3  
-    temp <<= 8;  
-    result |= temp;  
-    temp = k4.to_ulong();  // K4  
-    result |= temp;  
-    return result;  
-}  
-  
-/** 
- *  Cyclic left shift by byte 
- *  That is to say, [a0, a1, a2, a3] becomes [a1, a2, a3, a0] 
- */  
-word RotWord(word& rw)  
-{  
-    word high = rw << 8;  
-    word low = rw >> 24;  
-    return high | low;  
-}  
-  
-/** 
- *  S-box transformation for each byte in input word 
- */  
-word SubWord(word& sw)  
-{  
-    word temp;  
-    for(int i=0; i<32; i+=8)  
-    {  
-        int row = sw[i+7]*8 + sw[i+6]*4 + sw[i+5]*2 + sw[i+4];  
-        int col = sw[i+3]*8 + sw[i+2]*4 + sw[i+1]*2 + sw[i];  
-        byte val = S_Box[row][col];  
-        for(int j=0; j<8; ++j)  
-            temp[i+j] = val[j];  
-    }  
-    return temp;  
-}  
-  
-/** 
- *  Key Extension Function - Extended 128-bit key to w[4*(Nr+1)] 
- */   
-void KeyExpansion(byte key[4*Nk], word w[4*(Nr+1)])  
-{  
-    word temp;  
-    int i = 0;  
-    //The first four of w [] are input key s  
-    while(i < Nk)   
-    {  
-        w[i] = Word(key[4*i], key[4*i+1], key[4*i+2], key[4*i+3]);  
-        ++i;  
-    }  
-  
-    i = Nk;  
-  
-    while(i < 4*(Nr+1))  
-    {  
-        temp = w[i-1]; //Record the previous word  
-        if(i % Nk == 0)  
-            w[i] = w[i-Nk] ^ SubWord(RotWord(temp)) ^ Rcon[i/Nk-1];  
-        else   
-            w[i] = w[i-Nk] ^ temp;  
-        ++i;  
-    }  
-}  
-  
-/******************************Here are the encryption and decryption functions ********************************************************************/  
-/** 
- *  encryption 
- */  
-void encrypt(byte in[4*4], word w[4*(Nr+1)])  
-{  
-    word key[4];  
-    for(int i=0; i<4; ++i)  
-        key[i] = w[i];  
-    AddRoundKey(in, key);  
-  
-    for(int round=1; round<Nr; ++round)  
-    {  
-        SubBytes(in);  
-        ShiftRows(in);  
-        MixColumns(in);  
-        for(int i=0; i<4; ++i)  
-            key[i] = w[4*round+i];  
-        AddRoundKey(in, key);  
-    }  
-  
-    SubBytes(in);  
-    ShiftRows(in);  
-    for(int i=0; i<4; ++i)  
-        key[i] = w[4*Nr+i];  
-    AddRoundKey(in, key);  
-}  
-  
-/** 
- *  Decrypt 
- */  
-void decrypt(byte in[4*4], word w[4*(Nr+1)])  
-{  
-    word key[4];  
-    for(int i=0; i<4; ++i)  
-        key[i] = w[4*Nr+i];  
-    AddRoundKey(in, key);  
-  
-    for(int round=Nr-1; round>0; --round)  
-    {  
-        InvShiftRows(in);  
-        InvSubBytes(in);  
-        for(int i=0; i<4; ++i)  
-            key[i] = w[4*round+i];  
-        AddRoundKey(in, key);  
-        InvMixColumns(in);  
-    }  
-  
-    InvShiftRows(in);  
-    InvSubBytes(in);  
-    for(int i=0; i<4; ++i)  
-        key[i] = w[i];  
-    AddRoundKey(in, key);  
-}  
-  
-/**********************************************************************/    
-/*                                                                    */    
-/*                              Testing*/    
-/*                                                                    */    
-/**********************************************************************/   
-int main()  
-{  
-    byte key[16] = {0x2b, 0x7e, 0x15, 0x16,   
-                    0x28, 0xae, 0xd2, 0xa6,   
-                    0xab, 0xf7, 0x15, 0x88,   
-                    0x09, 0xcf, 0x4f, 0x3c};  
-  
-    byte plain[16] = {0x32, 0x88, 0x31, 0xe0,   
-                    0x43, 0x5a, 0x31, 0x37,  
-                    0xf6, 0x30, 0x98, 0x07,  
-                    0xa8, 0x8d, 0xa2, 0x34};   
-    //Output key  
-    cout << "The key is:";  
-    for(int i=0; i<16; ++i)  
-        cout << hex << key[i].to_ulong() << " ";  
-    cout << endl;  
-  
-    word w[4*(Nr+1)];  
-    KeyExpansion(key, w);  
-  
-    //Output plaintext to be encrypted  
-    cout << endl << "Plaintext to be encrypted:"<<endl;  
-    for(int i=0; i<16; ++i)  
-    {  
-        cout << hex << plain[i].to_ulong() << " ";  
-        if((i+1)%4 == 0)  
-            cout << endl;  
-    }  
-    cout << endl;  
-  
-    //Encryption, output ciphertext  
-    encrypt(plain, w);  
-    cout << "Encrypted ciphertext:"<<endl;  
-    for(int i=0; i<16; ++i)  
-    {  
-        cout << hex << plain[i].to_ulong() << " ";  
-        if((i+1)%4 == 0)  
-            cout << endl;  
-    }  
-    cout << endl;  
-  
-    //Decrypt, output plaintext  
-    decrypt(plain, w);  
-    cout << "Decrypted plaintext:"<<endl;  
-    for(int i=0; i<16; ++i)  
-    {  
-        cout << hex << plain[i].to_ulong() << " ";  
-        if((i+1)%4 == 0)  
-            cout << endl;  
-    }  
-    cout << endl;  
-    return 0;  
-}  
+      // Output the encrypted block.
+
+      for (i=0 ; i < Nb*4 ; i++) 
+      {
+         int x = (int)out[i];
+         if(x<16) wcout << 0 << hex << x;
+         else wcout << hex << x; 
+      } 
+   }
+   }break;
+
+   case 2:   //Decrypt
+   {
+   sz=0;
+   // Convert hex to byte
+   string strr(str);  
+   len = strr.length();
+   string temp;
+   for(int i=0; i< len; i+=2)
+   {
+       std::string byte = strr.substr(i,2);
+       char chr = (char) (int)strtol(byte.c_str(), NULL, 16);
+       temp.push_back(chr);
+   }
+   memcpy(re, temp.data(), temp.length());
+   temp="";
+   while (sz < len/2)
+   {
+      sz = fillBlockDE(sz,in,len/2);
+
+      // The block is decrypted here - the result is in the array 'out'
+      Decrypt();
+
+      // Alter decrypt xor wiht iv or previos block 
+      XorarrayDE();
+
+      for(int i=0;i<sizeof(iv);i++)
+         iv[i] = in[i];
+
+      // Output the decrypted block
+      for (i=0 ; i < Nb*4 ; i++) temp+= out[i];
+   }
+   wcout << string_to_wstring(temp);
+   }break;
+   
+   default:
+   break;
+   }
+}

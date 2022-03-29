@@ -92,17 +92,11 @@ using CryptoPP::CCM;
 // comparision
 #include "assert.h"
 
-/* Set _setmode()*/ 
-#ifdef _WIN32
-#include <io.h>
-#include <fcntl.h>
-#else
-#endif
+string plain, cipher, encoded, recovered;    // global variable
+byte key[32];             // 256 bits key
+byte iv[AES::BLOCKSIZE];  
 
-string plain, cipher, encoded, recovered;
-byte key[32];
-byte iv[AES::BLOCKSIZE];
-
+// Get plaintext or ciphertext
 void Getinput()
 {
     // Giao diện input
@@ -121,33 +115,35 @@ void Getinput()
         plain = wstring_to_string(wplain);
 	}break;
 	case 2:
-	 {   // LấY input từ file
+	 {   // Lấy input từ file
         string filename;
 		wstring wf;
-        wcout<<"PLease filename: ";
+        wcout<<"PLease filename: ";  //get filename to string
 		wcin>>wf;
 		filename = wstring_to_string(wf);
-	    FileSource file(filename.c_str(), true, new StringSink(plain));
+	    FileSource file(filename.c_str(), true, new StringSink(plain));  // put cipher or plain in plain variable
 	 }break;
 	default:
 	{}break;
 	}
 }
 
+// Get key, iv, nan
 void GetMaterial(int c=0)
 {
     switch (c)
     {
-    case 0:
+    case 0:  // Cho các mode có dùng iv và key: CBC, OFB, CFB, CTR, CCM, GCM
     {
-        wcout<<"Chon nguon key va iv: 1.Random 2.Screen 3.File\n";
+		// Giao diện 
+        wcout<<"Chon nguon key va iv/nan: 1.Random 2.Screen 3.File\n";
         int ikv;
 	    wcin>>ikv;
         switch (ikv)
         {
         case 1: 
         {
-            // iv, key tự sinh
+            // iv/nan, key tự sinh
             AutoSeededRandomPool prng;
 		    prng.GenerateBlock(key, sizeof(key));
 		    prng.GenerateBlock(iv, sizeof(iv));
@@ -155,49 +151,44 @@ void GetMaterial(int c=0)
         case 2:
         {
             // iv, key từ màng hình
-	        wcout<<"Please key: ";
+	        wcout<<"Please key: ";        // key nhập từ màng hình sẽ ở dạng hex
 		    wstring wskey;
-		    fflush(stdin);
-	        getline(wcin,wskey);         // Second getline
+	        wcin>>wskey;         
 	        string skey = wstring_to_string(wskey);
 	        StringSource(skey,true,new HexDecoder( new CryptoPP::ArraySink(key,sizeof(key))));
-		    wcout<<"Please iv: ";
+			
+			wcout<<"Please iv/nan: ";         // iv/nan nhập từ màng hình sẽ ở dạng hex 
 		    wstring wiv;
-		    fflush(stdin);
-	        getline(wcin,wiv);         // Third getline
+	        wcin>>wiv;       
 	        string siv = wstring_to_string(wiv);
 	        StringSource(siv,true,new HexDecoder( new CryptoPP::ArraySink(iv,sizeof(iv))));
         }break;
         case 3:
         {
             // iv, key từ file
-            wcout<<"Please key filename: ";
-            string filekey;
+			// get key 
+            wcout<<"Please key filename: ";         // Lấy tên file chứa key
+            string filekey, hexkey;
 			wstring wk;
             wcin>>wk;
 			filekey = wstring_to_string(wk);
-	        FileSource fs(filekey.c_str(), false);
-	        CryptoPP::ArraySink copykey(key, sizeof(key));
-	        fs.Detach(new Redirector(copykey));
-	        fs.Pump(sizeof(key));
-			StringSource(key,true,new HexDecoder( new CryptoPP::ArraySink(key,sizeof(key))));
+			// key được lưu ở dạng hex trong file nên cần decode trước khi gán vào key variable
+	        FileSource fs(filekey.c_str(), true,new HexDecoder( new CryptoPP::ArraySink(key, sizeof(key))));;
 			
-            wcout<<"Please iv filename: ";
+			// get iv
+            wcout<<"Please iv/nan filename: ";          // Lấy tên file chứa iv
             string fileiv;
 			wstring wi;
             wcin>>wi;
 			fileiv = wstring_to_string(wi);
-	        FileSource fss(fileiv.c_str(), false);
-	        CryptoPP::ArraySink copyiv(iv, sizeof(iv));
-	        fss.Detach(new Redirector(copyiv));
-	        fss.Pump(sizeof(iv));
-			StringSource(iv,true,new HexDecoder( new CryptoPP::ArraySink(iv,sizeof(iv))));
+			// iv được lưu ở dạng hex trong file nên cần decode trước khi gán vào iv variable
+			FileSource fss(fileiv.c_str(), true,new HexDecoder( new CryptoPP::ArraySink(iv, sizeof(iv))));
         }
         default:
             break;
         }
     }break;
-    case 1:
+    case 1: // Cho mode ECB 
     {
         wcout<<"Chon nguon key : 1.Random 2.Screen 3.File\n";
         int ikv;
@@ -223,16 +214,13 @@ void GetMaterial(int c=0)
         case 3:
         {
             // key từ file
-            wcout<<"Please key filename: ";
+            wcout<<"Please key filename: ";   // Lấy tên file chứa key
             string filekey;
 			wstring wk;
             wcin>> wk;
 			filekey = wstring_to_string(wk);
-	        FileSource fs(filekey.c_str(), false);
-	        CryptoPP::ArraySink copykey(key, sizeof(key));
-	        fs.Detach(new Redirector(copykey));
-	        fs.Pump(sizeof(key));
-			StringSource(key,true,new HexDecoder( new CryptoPP::ArraySink(key,sizeof(key))));
+            // key được lưu ở dạng hex trong file nên cần decode trước khi gán vào key variable
+	        FileSource fs(filekey.c_str(), true,new HexDecoder( new CryptoPP::ArraySink(key, sizeof(key))));;
         }
         default:
             break;
@@ -243,9 +231,10 @@ void GetMaterial(int c=0)
     }
 }
 
+// Show giá trị của key, iv, nan ở dạng hex
 void Display(int i=0)
 {
-	if(i==0)
+	if(i==0)      // Cho các mode có dùng iv và key: CBC, OFB, CFB, CTR, CCM, GCM
 	{
 		encoded.clear();
 	    StringSource(key, sizeof(key), true,
@@ -264,7 +253,7 @@ void Display(int i=0)
 	); // StringSource
 	wcout << "iv: " << string_to_wstring(encoded) << endl;
 	}
-	else 
+	else      // Cho mode ECB chỉ dùng đến key
 	{
 		encoded.clear();
 	    StringSource(key, sizeof(key), true,
@@ -274,6 +263,18 @@ void Display(int i=0)
 	); // StringSource
 	wcout << "key: " << string_to_wstring(encoded) << endl;
 	}
+}
+
+// Save to some file
+void savefile (string input)
+{
+	
+	wcout<<"filename: ";        // Get filename
+	string filename;
+	wstring wf;
+    wcin>> wf;
+	filename = wstring_to_string(wf);
+	StringSource s(input, true, new FileSink(filename.c_str()));    // save to file
 }
 
 int ia;
@@ -288,6 +289,7 @@ void M_GCM();
 
 int main(int argc, char* argv[])
 {
+	// setup mode hệ điều hành
     #ifdef __linux__
 	setlocale(LC_ALL,"");
 	#elif _WIN32
@@ -295,14 +297,15 @@ int main(int argc, char* argv[])
  	_setmode(_fileno(stdout), _O_U16TEXT);
 	#else
 	#endif
-    // Lấy mode (từ màng hình)
+	wcout<<"*********************************" << endl << "               AES\n" << "*********************************\n";
+    // Lấy mode (từ màn hình)
 	wcout<<"Please mode: 1.ECB 2.CBC 3.OFB 4.CFB 5.CTR 6.XTS 7.CCM 8.GCM\n";
 	int im;
 	wcin>>im;
-    // Lấy hoạt động (từ màng hình)
+    // Lấy hoạt động (từ màn hình)
     wcout<<"Please action: 1.Encypt 2.Decrypt\n";
     wcin>>ia;
-    // Gọi model 
+    // Gọi mode
     switch (im)
     {
         case 1:
@@ -346,12 +349,14 @@ int main(int argc, char* argv[])
 // ECB 
 void M_ECB()
 {
+	// prepare
     Getinput();
     GetMaterial(1);
 	Display(1);
+
     switch (ia)
     {
-    case 1:
+    case 1:   // Encrypt
     {
         try
 		{
@@ -368,7 +373,7 @@ void M_ECB()
 			cerr << e.what() << endl;
 		    exit(1);
 		}
-        // Pretty print
+        // Pretty print cipher
 	    encoded.clear();
 	    StringSource(cipher, true,
 	    new Base64Encoder(
@@ -376,8 +381,14 @@ void M_ECB()
 		    ) // B64Encoder
 	    ); // StringSource
 	    wcout << "cipher text: " << string_to_wstring(encoded) << endl;
+		
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
-    case 2:
+    case 2:    //Decrypt
     {
         try 
         {
@@ -395,8 +406,14 @@ void M_ECB()
 		    cerr << e.what() << endl;
 		    exit(1);
 	    }
-        // Pretty print
+        // Pretty print plain
         wcout << "recovered text: " << string_to_wstring(recovered) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     default:
         break;
@@ -406,12 +423,14 @@ void M_ECB()
 // CBC
 void M_CBC()
 {
+	// prepare
     Getinput();
     GetMaterial();
 	Display();
+
     switch (ia)
     {
-    case 1:
+    case 1:    // Encrypt
     {
         try
 		{
@@ -428,7 +447,7 @@ void M_CBC()
 			cerr << e.what() << endl;
 		    exit(1);
 		}
-		// Pretty print
+		// Pretty print cipher
 	    encoded.clear();
 	    StringSource(cipher, true,
 	    new Base64Encoder(
@@ -436,8 +455,14 @@ void M_CBC()
 		    ) // B64Encoder
 	    ); // StringSource
 	    wcout << "cipher text: " << string_to_wstring(encoded) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
-    case 2:
+    case 2:     // Decrypt
     {
         try 
         {
@@ -455,8 +480,14 @@ void M_CBC()
 		    cerr << e.what() << endl;
 		    exit(1);
 	    }
-        // Pretty print
+        // Pretty print plain
         wcout << "recovered text: " << string_to_wstring(recovered) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     default:
         break;
@@ -466,12 +497,14 @@ void M_CBC()
 // OFB
 void M_OFB()
 {
+	// prepare
     Getinput();
     GetMaterial();
 	Display();
+
     switch (ia)
     {
-    case 1:
+    case 1:    // Encrypt
     {
         try
 		{
@@ -488,7 +521,7 @@ void M_OFB()
 			cerr << e.what() << endl;
 		    exit(1);
 		}
-		// Pretty print
+		// Pretty print cipher
 	    encoded.clear();
 	    StringSource(cipher, true,
 	    new Base64Encoder(
@@ -496,8 +529,14 @@ void M_OFB()
 		    ) // B64Encoder
 	    ); // StringSource
 	    wcout << "cipher text: " << string_to_wstring(encoded) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
-    case 2:
+    case 2:    // Decrypt
     {
         try
 	    {
@@ -515,7 +554,14 @@ void M_OFB()
 		    cerr << e.what() << endl;
 		    exit(1);
 	    }
+		// Pretty print plain
         wcout << "recovered text: " << string_to_wstring(recovered) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     default:
         break;
@@ -525,12 +571,14 @@ void M_OFB()
 // CFB
 void M_CFB()
 {
+	// prepare
     Getinput();
     GetMaterial();
 	Display();
+
     switch (ia)
     {
-    case 1:
+    case 1:    // Encrypt
     {
         try
 		{
@@ -547,7 +595,7 @@ void M_CFB()
 			cerr << e.what() << endl;
 		    exit(1);
 		}
-		// Pretty print
+		// Pretty print cipher
 	    encoded.clear();
 	    StringSource(cipher, true,
 	    new Base64Encoder(
@@ -555,8 +603,14 @@ void M_CFB()
 		    ) // B64Encoder
 	    ); // StringSource
 	    wcout << "cipher text: " << string_to_wstring(encoded) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
-    case 2:
+    case 2:    // Decrypt
     {
         try
 	    {
@@ -574,7 +628,14 @@ void M_CFB()
 		    cerr << e.what() << endl;
 		    exit(1);
 	    }
+		// Pretty print plain
         wcout << "recovered text: " << string_to_wstring(recovered) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     default:
         break;
@@ -584,9 +645,11 @@ void M_CFB()
 //CTR
 void M_CTR()
 {
+	// prepare
     Getinput();
     GetMaterial();
 	Display();
+
     switch (ia)
     {
     case 1:
@@ -606,7 +669,7 @@ void M_CTR()
 			cerr << e.what() << endl;
 		    exit(1);
 		}
-		// Pretty print
+		// Pretty print cipher
 	    encoded.clear();
 	    StringSource(cipher, true,
 	    new Base64Encoder(
@@ -614,6 +677,12 @@ void M_CTR()
 		    ) // B64Encoder
 	    ); // StringSource
 	    wcout << "cipher text: " << string_to_wstring(encoded) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     case 2:
     {
@@ -633,7 +702,14 @@ void M_CTR()
 		    cerr << e.what() << endl;
 		    exit(1);
 	    }
+		// Pretty print plain
         wcout << "recovered text: " << string_to_wstring(recovered) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }
     default:
         break;
@@ -643,9 +719,11 @@ void M_CTR()
 // XTS
 void M_XTS()
 {
+	// prepare
     Getinput();
     GetMaterial();
 	Display();
+
     switch (ia)
     {
     case 1:
@@ -665,7 +743,7 @@ void M_XTS()
 			cerr << e.what() << endl;
 		    exit(1);
 		}
-		// Pretty print
+		// Pretty print cipher
 	    encoded.clear();
 	    StringSource(cipher, true,
 	    new Base64Encoder(
@@ -673,6 +751,12 @@ void M_XTS()
 		    ) // B64Encoder
 	    ); // StringSource
         wcout << "cipher text: " << string_to_wstring(encoded) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     case 2:
     {
@@ -692,7 +776,14 @@ void M_XTS()
 		    cerr << e.what() << endl;
 		    exit(1);
 	    }
+		// Pretty print plain
         wcout << "recovered text: " << string_to_wstring(recovered) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     default:
         break;
@@ -702,9 +793,11 @@ void M_XTS()
 // CCM
 void M_CCM()
 {
+	// prepare
     Getinput();
     GetMaterial();
 	Display();
+
     switch (ia)
     {
     case 1:
@@ -725,7 +818,7 @@ void M_CCM()
 			cerr << e.what() << endl;
 		    exit(1);
 		}
-		// Pretty print
+		// Pretty print cipher
 	    encoded.clear();
 	    StringSource(cipher, true,
 	    new Base64Encoder(
@@ -733,6 +826,12 @@ void M_CCM()
 		    ) // B64Encoder
 	    ); // StringSource
 	    wcout << "cipher text: " << string_to_wstring(encoded) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     case 2:
     {
@@ -752,7 +851,14 @@ void M_CCM()
 		    cerr << e.what() << endl;
 		    exit(1);
 	    }
+		// Pretty print plain
         wcout << "recovered text: " << string_to_wstring(recovered) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     default:
         break;
@@ -762,9 +868,11 @@ void M_CCM()
 // GCM
 void M_GCM()
 {
+	//prepare
     Getinput();
     GetMaterial();
 	Display();
+
     switch (ia)
     {
     case 1:
@@ -784,7 +892,7 @@ void M_GCM()
 			cerr << e.what() << endl;
 		    exit(1);
 		}
-		// Pretty print
+		// Pretty print cipher
 	    encoded.clear();
 	    StringSource(cipher, true,
 	    new Base64Encoder(
@@ -792,6 +900,12 @@ void M_GCM()
 		    ) // B64Encoder
 	    ); // StringSource
 	    wcout << "cipher text: " << string_to_wstring(encoded) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
     }break;
     case 2:
     {
@@ -805,7 +919,14 @@ void M_GCM()
 				new StringSink(recovered)
 			) 
 		); 
+		// Pretty print plain
 		wcout << "recovered text: " << string_to_wstring(recovered) << endl;
+
+		// Save to file
+		wcout << "Save to file? 1.Yes 2.No\n";
+		int is;
+		wcin>>is;
+		if(is==1) savefile(encoded);
 	    }
 	    catch(const CryptoPP::Exception& e)
 	    {
